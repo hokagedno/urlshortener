@@ -118,6 +118,55 @@ func (r *LinkRepository) List(ctx context.Context, limit, offset int) ([]domain.
 	return links, nil
 }
 
+// Top возвращает самые популярные ссылки по числу переходов.
+//
+// LEFT JOIN, а не INNER: ссылки без переходов тоже должны попадать в отчёт
+// с нулём, иначе на свежей базе «топ» окажется пустым.
+//
+// COUNT(c.link_id), а не COUNT(*): при LEFT JOIN у ссылки без кликов
+// появляется строка с NULL в колонках clicks, и COUNT(*) посчитал бы её
+// за единицу. COUNT по конкретной колонке игнорирует NULL и даёт честный 0.
+//
+// Во втором ключе сортировки — created_at: без него порядок ссылок
+// с одинаковым числом переходов не определён и может меняться от запроса
+// к запросу, что ломает пагинацию и делает тесты нестабильными.
+func (r *LinkRepository) Top(ctx context.Context, limit int) ([]domain.TopLink, error) {
+	const q = `
+		SELECT l.id, l.code, l.original_url, l.created_at, l.expires_at,
+		       COUNT(c.link_id) AS clicks
+		FROM links l
+		LEFT JOIN clicks c ON c.link_id = l.id
+		GROUP BY l.id
+		ORDER BY clicks DESC, l.created_at DESC
+		LIMIT $1`
+
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("select top links: %w", err)
+	}
+	defer rows.Close()
+
+	top := make([]domain.TopLink, 0, limit)
+	for rows.Next() {
+		var t domain.TopLink
+		err := rows.Scan(
+			&t.Link.ID, &t.Link.Code, &t.Link.OriginalURL,
+			&t.Link.CreatedAt, &t.Link.ExpiresAt,
+			&t.Clicks,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan top link: %w", err)
+		}
+		top = append(top, t)
+	}
+	// Ошибка чтения может прийти уже после последнего Next(),
+	// поэтому проверять rows.Err() обязательно.
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate top links: %w", err)
+	}
+	return top, nil
+}
+
 // StatsByCode — пример агрегирующего запроса с LEFT JOIN.
 //
 // LEFT JOIN, а не INNER: у ссылки без переходов должна вернуться строка

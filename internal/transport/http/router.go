@@ -38,6 +38,9 @@ func NewRouter(h *Handler, cache domain.Cache, log *slog.Logger, cfg RouterConfi
 		api.GET("/links/:code", h.getLink)
 		api.GET("/links/:code/stats", h.stats)
 		api.DELETE("/links/:code", h.deleteLink)
+		// Отдельная ветка /top, а не /links/top: в роутере Gin статический
+		// сегмент конфликтует с уже занятым параметром /links/:code.
+		api.GET("/top", h.topLinks)
 	}
 
 	// Редирект регистрируется последним: маршрут "/:code" самый широкий

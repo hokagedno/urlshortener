@@ -27,6 +27,7 @@ type ShortenerService interface {
 	Get(ctx context.Context, code string) (domain.Link, error)
 	List(ctx context.Context, limit, offset int) ([]domain.Link, error)
 	Stats(ctx context.Context, code string) (domain.LinkStats, error)
+	Top(ctx context.Context, limit int) ([]domain.TopLink, error)
 	Delete(ctx context.Context, code string) error
 }
 
@@ -125,6 +126,33 @@ func (h *Handler) stats(c *gin.Context) {
 		UniqueIPs:   st.UniqueIPs,
 		LastClickAt: st.LastClickAt,
 	})
+}
+
+// topLinks godoc: GET /api/v1/top?limit=10
+func (h *Handler) topLinks(c *gin.Context) {
+	// Ошибку Atoi намеренно игнорируем: при мусоре в query-параметре
+	// Atoi вернёт 0, а сервис подставит значение по умолчанию.
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	top, err := h.svc.Top(c.Request.Context(), limit)
+	if err != nil {
+		h.fail(c, err)
+		return
+	}
+
+	// Доменные модели превращаются в DTO: контракт API не должен
+	// меняться сам собой вслед за структурами внутри приложения.
+	items := make([]topLinkResponse, 0, len(top))
+	for _, t := range top {
+		items = append(items, topLinkResponse{
+			Code:        t.Link.Code,
+			ShortURL:    h.shortURL(t.Link.Code),
+			OriginalURL: t.Link.OriginalURL,
+			Clicks:      t.Clicks,
+		})
+	}
+
+	c.JSON(http.StatusOK, topResponse{Items: items, Limit: limit})
 }
 
 // deleteLink godoc: DELETE /api/v1/links/:code

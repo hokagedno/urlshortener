@@ -41,6 +41,12 @@ type LinkStats struct {
 	LastClickAt *time.Time `json:"last_click_at,omitempty"`
 }
 
+// TopLink — строка отчёта «самые популярные ссылки».
+type TopLink struct {
+	Link   Link  `json:"link"`
+	Clicks int64 `json:"clicks"`
+}
+
 // --- Порты (интерфейсы), которые реализуют внешние слои -------------------
 //
 // Интерфейс объявлен на стороне ПОТРЕБИТЕЛЯ (Go-идиома "accept interfaces,
@@ -57,6 +63,8 @@ type LinkRepository interface {
 	DeleteByCode(ctx context.Context, code string) error
 	List(ctx context.Context, limit, offset int) ([]Link, error)
 	StatsByCode(ctx context.Context, code string) (LinkStats, error)
+	// Top возвращает limit самых популярных ссылок по числу переходов.
+	Top(ctx context.Context, limit int) ([]TopLink, error)
 	// SaveClicks — пакетная вставка переходов одной транзакцией.
 	SaveClicks(ctx context.Context, clicks []Click) error
 }

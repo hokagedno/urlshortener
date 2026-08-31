@@ -26,6 +26,21 @@ type listResponse struct {
 	Offset int            `json:"offset"`
 }
 
+// topLinkResponse — одна строка отчёта «самые популярные ссылки».
+// Поле ID ссылки наружу не отдаём: клиенту оно не нужно, а внутренние
+// идентификаторы лишний раз светить незачем.
+type topLinkResponse struct {
+	Code        string `json:"code"`
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+	Clicks      int64  `json:"clicks"`
+}
+
+type topResponse struct {
+	Items []topLinkResponse `json:"items"`
+	Limit int               `json:"limit"`
+}
+
 type statsResponse struct {
 	Code        string     `json:"code"`
 	OriginalURL string     `json:"original_url"`
