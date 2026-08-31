@@ -1,5 +1,7 @@
 # URL Shortener
 
+[![CI](https://github.com/hokagedno/urlshortener/actions/workflows/ci.yml/badge.svg)](https://github.com/hokagedno/urlshortener/actions/workflows/ci.yml)
+
 Сервис коротких ссылок на Go: REST API на **Gin**, хранилище — **PostgreSQL**,
 кэш и rate limiting — **Redis**, асинхронный сбор статистики переходов на
 горутинах и каналах. Всё поднимается одной командой в **Docker**.
