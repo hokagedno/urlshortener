@@ -49,6 +49,12 @@ func (f *fakeService) Stats(context.Context, string) (domain.LinkStats, error) {
 }
 func (f *fakeService) Delete(context.Context, string) error { return nil }
 
+func (f *fakeService) Top(context.Context, int) ([]domain.TopLink, error) {
+	return []domain.TopLink{
+		{Link: domain.Link{Code: "abc123", OriginalURL: "https://example.com"}, Clicks: 5},
+	}, nil
+}
+
 // noopCache отключает rate limiting в тестах.
 type noopCache struct{}
 
@@ -161,5 +167,55 @@ func TestHealthz(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("ожидали 200, получили %d", w.Code)
+	}
+}
+
+// --- ЗАДАНИЕ 1 (шаг «в»): эндпоинт GET /api/v1/top ------------------------
+//
+// Тест падает с 404, пока маршрут не добавлен. Менять его не нужно —
+// он фиксирует контракт API.
+//
+// Ожидаемый ответ (200):
+//
+//	{
+//	  "items": [
+//	    {"code": "abc123", "short_url": "http://short.test/abc123",
+//	     "original_url": "https://example.com", "clicks": 5}
+//	  ],
+//	  "limit": 5
+//	}
+func TestTopLinks(t *testing.T) {
+	r := newTestRouter(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/top?limit=5", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("ожидали 200, получили %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Items []struct {
+			Code     string `json:"code"`
+			ShortURL string `json:"short_url"`
+			Clicks   int64  `json:"clicks"`
+		} `json:"items"`
+		Limit int `json:"limit"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("невалидный JSON: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("ожидали 1 строку, получили %d", len(resp.Items))
+	}
+	if resp.Items[0].Code != "abc123" || resp.Items[0].Clicks != 5 {
+		t.Errorf("получили %+v", resp.Items[0])
+	}
+	if resp.Items[0].ShortURL != "http://short.test/abc123" {
+		t.Errorf("short_url = %q", resp.Items[0].ShortURL)
+	}
+	if resp.Limit != 5 {
+		t.Errorf("limit = %d, ожидали 5", resp.Limit)
 	}
 }

@@ -190,6 +190,31 @@ func (s *Shortener) Stats(ctx context.Context, code string) (domain.LinkStats, e
 	return s.repo.StatsByCode(ctx, code)
 }
 
+// Top возвращает самые популярные ссылки — отчёт по числу переходов.
+//
+// limit нормализуется здесь, а не в SQL: значение приходит от клиента через
+// query-параметр, а защита от запроса «отдай миллион строк» — это правило
+// бизнес-логики, которому не место ни в хендлере, ни в тексте запроса.
+func (s *Shortener) Top(ctx context.Context, limit int) ([]domain.TopLink, error) {
+	const (
+		defaultLimit = 10
+		maxLimit     = 100
+	)
+
+	// Два случая обрабатываются по-разному. Не указан лимит — подставляем
+	// разумное значение по умолчанию. Запрошено слишком много — отдаём
+	// максимум разрешённого, а не откатываемся к дефолту: молча подменять
+	// «дай 500» на «дай 10» значит обманывать клиента API.
+	switch {
+	case limit <= 0:
+		limit = defaultLimit
+	case limit > maxLimit:
+		limit = maxLimit
+	}
+
+	return s.repo.Top(ctx, limit)
+}
+
 // Delete удаляет ссылку и обязательно инвалидирует кэш,
 // иначе редирект продолжит работать из Redis до истечения TTL.
 func (s *Shortener) Delete(ctx context.Context, code string) error {

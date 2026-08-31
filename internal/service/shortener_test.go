@@ -24,6 +24,12 @@ type stubRepo struct {
 	nextID   int64
 	clicks   []domain.Click
 	failNext error
+
+	// Поля для проверки Shortener.Top: стаб запоминает, с каким limit
+	// его позвали, и отдаёт заранее заготовленный результат.
+	topLimit  int
+	topResult []domain.TopLink
+	topErr    error
 }
 
 func newStubRepo() *stubRepo {
@@ -77,6 +83,13 @@ func (r *stubRepo) List(context.Context, int, int) ([]domain.Link, error) { retu
 
 func (r *stubRepo) StatsByCode(context.Context, string) (domain.LinkStats, error) {
 	return domain.LinkStats{}, nil
+}
+
+func (r *stubRepo) Top(_ context.Context, limit int) ([]domain.TopLink, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.topLimit = limit
+	return r.topResult, r.topErr
 }
 
 func (r *stubRepo) SaveClicks(_ context.Context, cs []domain.Click) error {
@@ -313,5 +326,69 @@ func TestResolve_ConcurrentSafe(t *testing.T) {
 
 	for err := range errs {
 		t.Errorf("параллельный resolve вернул ошибку: %v", err)
+	}
+}
+
+// --- ЗАДАНИЕ 1: тесты для Shortener.Top -----------------------------------
+//
+// Эти тесты падают, пока метод не реализован. Их менять не нужно —
+// они описывают требуемое поведение.
+
+func TestTop_NormalizesLimit(t *testing.T) {
+	cases := []struct {
+		name     string
+		given    int
+		expected int
+	}{
+		{"ноль заменяется значением по умолчанию", 0, 10},
+		{"отрицательный заменяется значением по умолчанию", -5, 10},
+		{"разумный передаётся как есть", 7, 7},
+		{"слишком большой ограничивается сотней", 500, 100},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo, _, _ := newSUT(t)
+
+			if _, err := svc.Top(context.Background(), tc.given); err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+
+			repo.mu.Lock()
+			got := repo.topLimit
+			repo.mu.Unlock()
+
+			if got != tc.expected {
+				t.Errorf("в репозиторий ушёл limit=%d, ожидали %d", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestTop_ReturnsRepositoryResult(t *testing.T) {
+	svc, repo, _, _ := newSUT(t)
+	repo.topResult = []domain.TopLink{
+		{Link: domain.Link{Code: "aaa", OriginalURL: "https://a.example"}, Clicks: 42},
+		{Link: domain.Link{Code: "bbb", OriginalURL: "https://b.example"}, Clicks: 7},
+	}
+
+	got, err := svc.Top(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("получили %d строк, ожидали 2", len(got))
+	}
+	if got[0].Link.Code != "aaa" || got[0].Clicks != 42 {
+		t.Errorf("первая строка отчёта: %+v", got[0])
+	}
+}
+
+func TestTop_PropagatesRepositoryError(t *testing.T) {
+	svc, repo, _, _ := newSUT(t)
+	repo.topErr = errors.New("база недоступна")
+
+	if _, err := svc.Top(context.Background(), 10); err == nil {
+		t.Error("ошибка репозитория должна возвращаться наружу")
 	}
 }
