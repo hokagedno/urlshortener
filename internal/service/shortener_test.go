@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -196,6 +197,41 @@ func TestCreate_RejectsBadURL(t *testing.T) {
 			_, err := svc.Create(context.Background(), service.CreateInput{OriginalURL: raw})
 			if !errors.Is(err, domain.ErrInvalidURL) {
 				t.Errorf("ожидали ErrInvalidURL, получили %v", err)
+			}
+		})
+	}
+}
+
+// Пользовательский алиас проходит валидацию до похода в репозиторий:
+// в коде ссылки допустимы только [0-9a-zA-Z_-] длиной от 3 до 32 символов.
+func TestCreate_RejectsInvalidAlias(t *testing.T) {
+	cases := map[string]string{
+		"короче трёх символов":  "ab",
+		"длиннее тридцати двух": strings.Repeat("a", 33),
+		"пробел внутри":         "my link",
+		"кириллица":             "ссылка",
+		"слэш":                  "a/b/c",
+	}
+
+	for name, alias := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, repo, _, _ := newSUT(t)
+
+			_, err := svc.Create(context.Background(), service.CreateInput{
+				OriginalURL: "https://example.com",
+				Alias:       alias,
+			})
+
+			if !errors.Is(err, domain.ErrInvalidAlias) {
+				t.Fatalf("ожидали ErrInvalidAlias, получили %v", err)
+			}
+
+			// Некорректный алиас не должен доходить до хранилища:
+			// проверка обязана отсечь его раньше.
+			repo.mu.Lock()
+			defer repo.mu.Unlock()
+			if len(repo.links) != 0 {
+				t.Errorf("в репозиторий попала ссылка с некорректным алиасом %q", alias)
 			}
 		})
 	}
